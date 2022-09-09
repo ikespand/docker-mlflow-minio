@@ -1,0 +1,46 @@
+version: '3'
+
+services:
+    mlflow:
+      build:
+        context: ./mlflow
+        dockerfile: Dockerfile
+      ports:
+        - "5000:5000"
+      environment:
+        MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+        AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+        AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+        AWS_BUCKET_NAME: ${AWS_BUCKET_NAME}
+      entrypoint:
+        bash -c "mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://$${AWS_BUCKET_NAME}/ --host 0.0.0.0"
+      volumes:
+        - "./mlflow_data:/mlflow"
+
+    minio:
+      image: minio/minio
+      ports:
+        - "9001:9001"
+        - "9000:9000"
+      command:
+        server /data --console-address ':9001'
+      environment:
+        MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID}
+        MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY}        
+      volumes:
+        - "./minio_data:/data"
+    
+    createbuckets: # Taken from: https://stackoverflow.com/questions/66412289/minio-add-a-public-bucket-with-docker-compose
+      image: minio/mc
+      depends_on:
+        - minio
+      environment:
+          MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID}
+          MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY}     
+          AWS_BUCKET_NAME: ${AWS_BUCKET_NAME}      
+      entrypoint: >
+        /bin/sh -c "
+        /usr/bin/mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+        /usr/bin/mc mb myminio/${AWS_BUCKET_NAME};
+        exit 0;
+        "
